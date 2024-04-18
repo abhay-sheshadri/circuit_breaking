@@ -1,10 +1,12 @@
-import torch
-from torch.utils.data import DataLoader
-import torch.nn.functional as F
 from itertools import cycle
-from transformer_lens import HookedTransformer
-from .masks import BasicMask
+
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
 from tqdm import tqdm
+from transformer_lens import HookedTransformer
+
+from .masks import BasicMask
 
 
 def log_1_minus_p_loss(logits, labels, threshold=-5.0):
@@ -78,7 +80,8 @@ def train_mask(
     retain_dataloader = cycle(retain_dataloader)
     forget_dataloader = cycle(forget_dataloader)
     # Train a sparse mask
-    for epoch in tqdm(range(n_epochs)):
+    pbar = tqdm(range(n_epochs))
+    for epoch in pbar:
         # Sample batches
         retain_batch = next(retain_dataloader)
         forget_batch = next(forget_dataloader)
@@ -125,7 +128,6 @@ def train_mask(
         # zero_nan_grads(mask)
         optimizer.step()
         mask.on_step_end()
-        print(f"Retain Loss: {retain_loss:.3f}, Forget Loss: {forget_loss:.3f}, Reg Loss: {reg_loss:.3f}")
+        pbar.set_description(
+            f"Retain Loss: {retain_loss:.3f}, Forget Loss: {forget_loss:.3f}, Reg Loss: {reg_loss:.3f}")
         scheduler.step()
-        
-        
