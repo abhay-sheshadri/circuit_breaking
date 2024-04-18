@@ -46,7 +46,7 @@ class NeuronLevelMask(BasicMask):
         
     def _get_mask_hook(self, mask):
         def hook_fn(acts, hook):
-            return acts * mask#[None, None, :]
+            return acts * mask.to(acts.dtype) #[None, None, :]
         return hook_fn
     
     def on_step_end(self):
@@ -57,7 +57,7 @@ class NeuronLevelMask(BasicMask):
     def regularization_loss(self):
         total_loss = 0
         for layer in self.masks:
-            total_loss += torch.sqrt(1 - self.masks[layer] + 1e-1).mean()
+            total_loss += (1 - self.masks[layer]).mean()
         return total_loss
     
 

@@ -106,9 +106,10 @@ def create_dataset(
     # Convert dataset to DataLoader for batch processing
     dataloader = DataLoader(
         tokenized_dataset,
-        shuffle=False,
         collate_fn=data_collator,
-        batch_size=batch_size
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True
     )
 
     return dataset, dataloader

@@ -26,13 +26,16 @@ def load_model_from_transformers(model_name_or_path):
     return model, tokenizer
 
 
-def from_hf_to_tlens(hf_model, hf_tokenizer, model_name):
+def from_hf_to_tlens(hf_model, hf_tokenizer, model_name, disable_grads=False):
     # Convert huggingface model to transformer lens
     clear_gpu(hf_model)
     hooked_model = HookedTransformer.from_pretrained_no_processing(
         model_name, hf_model=hf_model, tokenizer=hf_tokenizer, torch_dtype=torch.bfloat16, device_map="auto"
     )
     hooked_model.cuda()
+    if disable_grads:
+        for param in hooked_model.parameters():
+             param.requires_grad_(False)
     return hooked_model
 
  

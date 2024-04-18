@@ -66,12 +66,14 @@ def train_mask(
     n_epochs: int = 100,
     learning_rate: float = 1e-3,
     max_gpu_batch_size: int = 32,
-    alpha: float = 0.3,
+    alpha: float = 0.2,
+    beta: float = 1.0,
     clip_grad: float = 1.0,
 ):
     # Initialize optimizer
     mask = mask.cuda()
     optimizer = torch.optim.AdamW(mask.parameters(), lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=n_epochs)
     # Cycle dataloaders
     retain_dataloader = cycle(retain_dataloader)
     forget_dataloader = cycle(forget_dataloader)
@@ -91,17 +93,17 @@ def train_mask(
             sub_batch_length = sub_batch["tokens"].shape[0]
             tokens = sub_batch["tokens"].cuda()
             tokens_mask = sub_batch["mask"][:, 1:].cuda()
-            # Ciompute loss
+            # Compute loss
+            #with torch.autocast(device_type="cuda"):
             logits = model(tokens[:, :-1])
             labels = tokens[:, 1:]
             loss = (sub_batch_length/retain_batch_size) * F.cross_entropy(logits[tokens_mask], labels[tokens_mask])
-            #print(loss)
             loss.backward()
             retain_loss += loss.item()
         # Compute flipped loss over forget
         forget_batch_size = forget_batch['tokens'].shape[0]
         forget_loss = 0
-        for start_idx in range(0, retain_batch_size, max_gpu_batch_size):
+        for start_idx in range(0, forget_batch_size, max_gpu_batch_size):
             # Subsample batch
             sub_batch = get_minibatch(forget_batch, start_idx, max_gpu_batch_size)
             sub_batch_length = sub_batch["tokens"].shape[0]
@@ -110,19 +112,20 @@ def train_mask(
             # Compute loss
             logits = model(tokens[:, :-1])
             labels = tokens[:, 1:]
-            loss = alpha * (sub_batch_length/forget_batch_size) * log_1_minus_p_loss(logits[tokens_mask], labels[tokens_mask])
+            loss = alpha * (sub_batch_length/forget_batch_size) *  log_1_minus_p_loss(logits[tokens_mask], labels[tokens_mask])
             loss.backward()
             forget_loss += loss.item()
         # Add sparsity loss and backprop
-        loss = mask.regularization_loss()
+        loss = beta * mask.regularization_loss()
         loss.backward()
         reg_loss = loss.item()
         # Step and log
         if clip_grad is not None:
             torch.nn.utils.clip_grad_norm_(mask.parameters(), clip_grad)
-        zero_nan_grads(mask)
+        # zero_nan_grads(mask)
         optimizer.step()
         mask.on_step_end()
         print(f"Retain Loss: {retain_loss:.3f}, Forget Loss: {forget_loss:.3f}, Reg Loss: {reg_loss:.3f}")
+        scheduler.step()
         
         
