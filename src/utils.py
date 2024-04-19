@@ -38,7 +38,7 @@ def from_hf_to_tlens(hf_model, hf_tokenizer, model_name, disable_grads=False):
     return hooked_model
 
  
-def compute_metrics(model, dataloader):
+def compute_metrics(model, dataloader, verbose=True):
     # Compute 
     model.eval()
     criterion = torch.nn.CrossEntropyLoss(
@@ -52,7 +52,7 @@ def compute_metrics(model, dataloader):
     }
 
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Computing loss"):
+        for batch in tqdm(dataloader, desc="Computing loss", disable=not verbose):
             # When the dataset is chunked, the leftover piece is kept. 
             # However, sometimes the leftover piece is of size 1, and should be 
             # skipped.

@@ -83,7 +83,7 @@ class NeuronLevelMask(BasicMask):
         self.undiscretize()
         # Mask out everything less sthan threshold
         for key, tensor in self.masks.items():
-            self.mask_masks[key] = tensor < threshold
+            self.mask_masks[key] = tensor <= threshold
         # Set binarized to true
         self.binarized = True
 
@@ -91,28 +91,40 @@ class NeuronLevelMask(BasicMask):
     def discretize_topk(self, k):
         # Undiscretize
         self.undiscretize()
-        # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-        all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-        threshold = all_values.kthvalue(k).values
-        # Mask out everything less than threshold
-        for key, tensor in self.masks.items():
-            self.mask_masks[key] = tensor < threshold
+        # If k == 0, everything is false
+        if k != 0:
+            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
+            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
+            threshold = all_values.kthvalue(k).values
+            # Mask out everything less than threshold
+            for key, tensor in self.masks.items():
+                self.mask_masks[key] = tensor <= threshold
         # Set binarized to true
         self.binarized = True
     
     def discretize_topk_percent(self, percentile):
         # Undiscretize
         self.undiscretize()
-        # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-        all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-        k = int(percentile  * all_values.numel())
-        threshold = all_values.kthvalue(k).values
-        # Mask out everything less than threshold
-        for key, tensor in self.masks.items():
-            self.mask_masks[key] = tensor < threshold
+        # If k == 0, everything is false
+        if k != 0:
+            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
+            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
+            k = int(percentile  * all_values.numel())
+            threshold = all_values.kthvalue(k).values
+            # Mask out everything less than threshold
+            for key, tensor in self.masks.items():
+                self.mask_masks[key] = tensor <= threshold
         # Set binarized to true
         self.binarized = True
 
+    def num_masked(self):
+        if not self.binarized:
+            return None
+        else:
+            total = 0
+            for mask in self.mask_masks.values():
+                total += torch.sum(mask).item()
+            return total
 
 class FeatureLevelMask(BasicMask):
     pass
