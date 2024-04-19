@@ -6,8 +6,7 @@ import torch
 from einops import rearrange
 from tqdm import tqdm
 from transformer_lens import HookedTransformer
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          DataCollatorForLanguageModeling)
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def clear_gpu(model):
@@ -57,12 +56,12 @@ def compute_metrics(model, dataloader):
             # When the dataset is chunked, the leftover piece is kept. 
             # However, sometimes the leftover piece is of size 1, and should be 
             # skipped.
-            if batch["input_ids"].shape[1] <= 1:
+            if batch["tokens"].shape[1] <= 1:
                 continue
 
             # Forward pass through the model
-            input_ids = batch["input_ids"][:, :-1].to("cuda")
-            targets = batch["input_ids"][:, 1:].to("cuda")
+            input_ids = batch["tokens"][:, :-1].to("cuda")
+            targets = batch["tokens"][:, 1:].to("cuda")
             mask = batch["mask"][:, 1:].to("cuda")
             logits = model(input_ids)
 
