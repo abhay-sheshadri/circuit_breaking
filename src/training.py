@@ -115,7 +115,7 @@ def train_mask(
             # Compute loss
             logits = model(tokens[:, :-1])
             labels = tokens[:, 1:]
-            loss = alpha * (sub_batch_length/forget_batch_size) *  log_1_minus_p_loss(logits[tokens_mask], labels[tokens_mask])
+            loss = alpha * (sub_batch_length/forget_batch_size) * log_1_minus_p_loss(logits[tokens_mask], labels[tokens_mask])
             loss.backward()
             forget_loss += loss.item()
         # Add sparsity loss and backprop
