@@ -7,7 +7,7 @@ from transformer_lens import HookedTransformer
 from .mask_utils import *
 
 
-class MLPInputMask(BasicMask):
+class MLPHiddenMask(BasicMask):
     
     def __init__(
         self,
@@ -83,7 +83,7 @@ class MLPOutputMask(BasicMask):
         return hook_fn
 
 
-class SVDMask(BasicMask):
+class MLPOutputSVDMask(BasicMask):
 
     def __init__(
         self,
@@ -137,6 +137,7 @@ class SVDMask(BasicMask):
 
 
 class NeuronLevelMask(BasicMask):
+    # MLPInput over MLPs, SVD over W_o
     pass
 
 class FeatureLevelMask(MaskRoot):
