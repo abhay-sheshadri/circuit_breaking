@@ -4,20 +4,10 @@ import torch
 from torch import nn
 from transformer_lens import HookedTransformer
 
-
-class BasicMask(nn.Module):
-    
-    def __init__(self):
-        super().__init__()
-    
-    def _get_mask_hook(self, mask):
-        raise NotImplementedError()
-
-    def regularization_loss(self):
-        raise NotImplementedError() 
+from .mask_utils import *
 
 
-class NeuronLevelMask(BasicMask):
+class MLPInputMask(BasicMask):
     
     def __init__(
         self,
@@ -25,17 +15,13 @@ class NeuronLevelMask(BasicMask):
         start_layer: int = 0,
         end_layer: int = None
     ):
-        super().__init__()
-        model.reset_hooks()
-        
-        self.masks = nn.ParameterDict()
-        self.mask_masks = {} # A mask for our masks
-        self.binarized = False
-        
-        if end_layer is None:
-            end_layer = model.cfg.n_layers
+        super().__init__(
+            model=model,
+            start_layer=start_layer,
+            end_layer=end_layer
+        )
 
-        for layer in range(start_layer, end_layer):
+        for layer in range(self.start_layer, self.end_layer):
             # Initialize mask
             mask = nn.Parameter(torch.ones(model.cfg.d_mlp))
             mask.requires_grad_(True)
@@ -57,74 +43,7 @@ class NeuronLevelMask(BasicMask):
                 mlp_mask[~mlp_mask_mask] = 1
             return acts * mlp_mask
         return hook_fn
-    
-    def on_step_end(self):
-        # Clip the masks at every step end
-        with torch.no_grad():
-            for layer in self.masks:
-                self.masks[layer].clamp_(0, 1)
-            
-    def regularization_loss(self):
-        # Compute the L1 of the mask
-        total_loss = 0
-        for layer in self.masks:
-            total_loss += (1 - self.masks[layer]).mean()
-        return total_loss
 
-    def undiscretize(self,):
-        # Set everything in each maskmask to false
-        for key in self.mask_masks:
-            self.mask_masks[key].fill_(False)
-        # Set binarized to false
-        self.binarized = False
-
-    def discretize_threshold(self, threshold):
-        # Undiscretize
-        self.undiscretize()
-        # Mask out everything less sthan threshold
-        for key, tensor in self.masks.items():
-            self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-
-    
-    def discretize_topk(self, k):
-        # Undiscretize
-        self.undiscretize()
-        # If k == 0, everything is false
-        if k != 0:
-            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-            threshold = all_values.kthvalue(k).values
-            # Mask out everything less than threshold
-            for key, tensor in self.masks.items():
-                self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-    
-    def discretize_topk_percent(self, percentile):
-        # Undiscretize
-        self.undiscretize()
-        # If k == 0, everything is false
-        if k != 0:
-            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-            k = int(percentile  * all_values.numel())
-            threshold = all_values.kthvalue(k).values
-            # Mask out everything less than threshold
-            for key, tensor in self.masks.items():
-                self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-
-    def num_masked(self):
-        if not self.binarized:
-            return None
-        else:
-            total = 0
-            for mask in self.mask_masks.values():
-                total += torch.sum(mask).item()
-            return total
 
 class MLPOutputMask(BasicMask):
 
@@ -134,17 +53,13 @@ class MLPOutputMask(BasicMask):
         start_layer: int = 0,
         end_layer: int = None
     ):
-        super().__init__()
-        model.reset_hooks()
-        
-        self.masks = nn.ParameterDict()
-        self.mask_masks = {} # A mask for our masks
-        self.binarized = False
-        
-        if end_layer is None:
-            end_layer = model.cfg.n_layers
+        super().__init__(
+            model=model,
+            start_layer=start_layer,
+            end_layer=end_layer
+        )
 
-        for layer in range(start_layer, end_layer):
+        for layer in range(self.start_layer, self.end_layer):
             # Initialize mask
             mask = nn.Parameter(torch.ones(model.cfg.d_model))
             mask.requires_grad_(True)
@@ -166,74 +81,7 @@ class MLPOutputMask(BasicMask):
                 mlp_mask[~mlp_mask_mask] = 1
             return acts * mlp_mask
         return hook_fn
-    
-    def on_step_end(self):
-        # Clip the masks at every step end
-        with torch.no_grad():
-            for layer in self.masks:
-                self.masks[layer].clamp_(0, 1)
-            
-    def regularization_loss(self):
-        # Compute the L1 of the mask
-        total_loss = 0
-        for layer in self.masks:
-            total_loss += (1 - self.masks[layer]).mean()
-        return total_loss
 
-    def undiscretize(self,):
-        # Set everything in each maskmask to false
-        for key in self.mask_masks:
-            self.mask_masks[key].fill_(False)
-        # Set binarized to false
-        self.binarized = False
-
-    def discretize_threshold(self, threshold):
-        # Undiscretize
-        self.undiscretize()
-        # Mask out everything less sthan threshold
-        for key, tensor in self.masks.items():
-            self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-
-    
-    def discretize_topk(self, k):
-        # Undiscretize
-        self.undiscretize()
-        # If k == 0, everything is false
-        if k != 0:
-            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-            threshold = all_values.kthvalue(k).values
-            # Mask out everything less than threshold
-            for key, tensor in self.masks.items():
-                self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-    
-    def discretize_topk_percent(self, percentile):
-        # Undiscretize
-        self.undiscretize()
-        # If k == 0, everything is false
-        if k != 0:
-            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-            k = int(percentile  * all_values.numel())
-            threshold = all_values.kthvalue(k).values
-            # Mask out everything less than threshold
-            for key, tensor in self.masks.items():
-                self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-
-    def num_masked(self):
-        if not self.binarized:
-            return None
-        else:
-            total = 0
-            for mask in self.mask_masks.values():
-                total += torch.sum(mask).item()
-            return total
 
 class SVDMask(BasicMask):
 
@@ -243,18 +91,15 @@ class SVDMask(BasicMask):
         start_layer: int = 0,
         end_layer: int = None
     ):
-        super().__init__()
-        model.reset_hooks()
+        super().__init__(
+            model=model,
+            start_layer=start_layer,
+            end_layer=end_layer
+        )
         
         self.svd_projections = {}
-        self.masks = nn.ParameterDict()
-        self.mask_masks = {} # A mask for our masks
-        self.binarized = False
-        
-        if end_layer is None:
-            end_layer = model.cfg.n_layers
 
-        for layer in range(start_layer, end_layer):
+        for layer in range(self.start_layer, self.end_layer):
             # Initialize mask
             mask = nn.Parameter(torch.ones(model.cfg.d_model))
             mask.requires_grad_(True)
@@ -267,7 +112,6 @@ class SVDMask(BasicMask):
             mlp_out_weight = model.blocks[layer].mlp.W_out
             mlp_out_weight_f32 = mlp_out_weight.float()
             _, _, V_T = torch.svd(mlp_out_weight_f32)
-            print(V_T.shape)
 
             # V_T, U take SVD components and output features
             self.svd_projections[f"mlp_{layer}"] = V_T.to(mlp_out_weight.dtype)
@@ -291,73 +135,10 @@ class SVDMask(BasicMask):
             return unprojected_acts
         return hook_fn
 
-    def on_step_end(self):
-        # Clip the masks at every step end
-        with torch.no_grad():
-            for layer in self.masks:
-                self.masks[layer].clamp_(0, 1)
-            
-    def regularization_loss(self):
-        # Compute the L1 of the mask
-        total_loss = 0
-        for layer in self.masks:
-            total_loss += (1 - self.masks[layer]).mean()
-        return total_loss
 
-    def undiscretize(self,):
-        # Set everything in each maskmask to false
-        for key in self.mask_masks:
-            self.mask_masks[key].fill_(False)
-        # Set binarized to false
-        self.binarized = False
+class NeuronLevelMask(BasicMask):
+    pass
 
-    def discretize_threshold(self, threshold):
-        # Undiscretize
-        self.undiscretize()
-        # Mask out everything less sthan threshold
-        for key, tensor in self.masks.items():
-            self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-
-    
-    def discretize_topk(self, k):
-        # Undiscretize
-        self.undiscretize()
-        # If k == 0, everything is false
-        if k != 0:
-            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-            threshold = all_values.kthvalue(k).values
-            # Mask out everything less than threshold
-            for key, tensor in self.masks.items():
-                self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-    
-    def discretize_topk_percent(self, percentile):
-        # Undiscretize
-        self.undiscretize()
-        # If k == 0, everything is false
-        if k != 0:
-            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-            k = int(percentile  * all_values.numel())
-            threshold = all_values.kthvalue(k).values
-            # Mask out everything less than threshold
-            for key, tensor in self.masks.items():
-                self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
-
-    def num_masked(self):
-        if not self.binarized:
-            return None
-        else:
-            total = 0
-            for mask in self.mask_masks.values():
-                total += torch.sum(mask).item()
-            return total
-
-class FeatureLevelMask(BasicMask):
+class FeatureLevelMask(MaskRoot):
+    # Use an SAE as a mask
     pass
