@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformer_lens import HookedTransformer
+from collections import defaultdict
 
 from .masks import BasicMask
 
@@ -69,12 +70,13 @@ def train_mask(
     learning_rate: float = 5e-2,
     max_gpu_batch_size: int = 32,
     alpha: float = 0.2,
+    weight_decay: float = 0,
     beta: float = 1.0,
     clip_grad: float = 1.0,
 ):
     # Initialize optimizer
     mask = mask.cuda()
-    optimizer = torch.optim.AdamW(mask.parameters(), lr=learning_rate)
+    optimizer = torch.optim.AdamW(mask.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=n_epochs)
     # Cycle dataloaders
     retain_dataloader = cycle(retain_dataloader)
@@ -130,4 +132,47 @@ def train_mask(
         mask.on_step_end()
         pbar.set_description(
             f"Retain Loss: {retain_loss:.3f}, Forget Loss: {forget_loss:.3f}, Reg Loss: {reg_loss:.3f}")
+        scheduler.step()
+
+
+def train_mask_with_tasks(
+    model: HookedTransformer,
+    mask: BasicMask,
+    task_names_and_weights: dict,
+    n_epochs: int = 50,
+    learning_rate: float = 1e-5,
+    weight_decay: float = 0,
+    num_acc_steps: int = 8,
+    beta: float = 1.0,
+    clip_grad: float = 1.0,
+):
+    # Initialize optimizer
+    mask = mask.cuda()
+    optimizer = torch.optim.AdamW(mask.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=n_epochs)
+    # Train a sparse mask
+    pbar = tqdm(range(n_epochs))
+    for epoch in pbar:
+        # Reset grad
+        optimizer.zero_grad()
+        # Compute loss over tasks
+        not_reg_loss = defaultdict(lambda: 0)
+        for _ in range(num_acc_steps):
+            for task_name in task_names_and_weights:
+                task, weight = task_names_and_weights[task_name]
+                loss = (weight/num_acc_steps) * task.get_train_loss(model)
+                loss.backward()
+                not_reg_loss[task_name] += loss.item()
+        # Add sparsity loss and backprop
+        loss = beta * mask.regularization_loss()
+        loss.backward()
+        reg_loss = loss.item()
+        # Step and log
+        if clip_grad is not None:
+            torch.nn.utils.clip_grad_norm_(mask.parameters(), clip_grad)
+        # zero_nan_grads(mask)
+        optimizer.step()
+        mask.on_step_end()
+        pbar.set_description(
+            f"Epoch: {epoch}, " + "".join([f"{task_name}: {loss:.3f}, " for task_name, loss in not_reg_loss.items()]) + f"Reg Loss: {reg_loss:.3f}")
         scheduler.step()
