@@ -23,10 +23,16 @@ class BasicMask(MaskRoot):
         self,
         model: HookedTransformer,
         start_layer: int = 0,
-        end_layer: int = None
+        end_layer: int = None,
+
+        disable_model_grads=True
     ):
         super().__init__()
         model.reset_hooks()
+        if disable_model_grads:
+            # set all model params to not require grads
+            for param in model.parameters():
+                param.requires_grad_(False)
         
         self.masks = nn.ParameterDict()
         self.mask_masks = {} # A mask for our masks
