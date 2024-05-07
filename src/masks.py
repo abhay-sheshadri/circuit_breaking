@@ -179,7 +179,7 @@ class NeuronLevelMask(BasicMask):
         self.model_cfg = model.cfg
         self.components = components
         self.component_heads = component_heads
-        self.attn_masks = nn.ParameterDict()
+        # self.attn_masks = nn.ParameterDict()
         self.attn_mask_frozen = nn.ParameterDict()
         self.attn_mask_unfrozen = nn.ParameterDict()
         with torch.no_grad():
@@ -196,7 +196,7 @@ class NeuronLevelMask(BasicMask):
                 trainable_mask.requires_grad_(True)
                 # frozen_heads.requires_grad_(False)
                 # unfrozen_heads.requires_grad_(False)
-                self.attn_masks[self.convert_param_name(component)] = trainable_mask
+                self.masks[self.convert_param_name(component)] = trainable_mask
                 self.mask_masks[self.convert_param_name(component)] = torch.zeros_like(trainable_mask).to(torch.bool)
                 self.attn_mask_frozen[self.convert_param_name(component)] = frozen_heads
                 self.attn_mask_unfrozen[self.convert_param_name(component)] = unfrozen_heads
@@ -233,7 +233,7 @@ class NeuronLevelMask(BasicMask):
         def hook_fn(acts, hook):
             frozen_heads = self.attn_mask_frozen[self.convert_param_name(component)]
             unfrozen_heads = self.attn_mask_unfrozen[self.convert_param_name(component)]
-            trainable_mask = self.attn_masks[self.convert_param_name(component)]
+            trainable_mask = self.masks[self.convert_param_name(component)]
             
             # print(f"{frozen_heads.device=}, {unfrozen_heads.device=}, {trainable_mask.device=}")
             trainable_mask = trainable_mask.to(acts.dtype)
@@ -257,26 +257,12 @@ class NeuronLevelMask(BasicMask):
         total_loss = 0
         # mlps first
         for component in self.masks:
-            total_loss += (1 - self.masks[component]).mean()
-        for component in self.attn_masks:
-            # mask is unfrozen_heads * mask
-            total_loss += (1 - self.attn_masks[component] * self.attn_mask_unfrozen[component]).mean()
+            if "attn" in component:
+                assert component in self.attn_mask_unfrozen and component in self.attn_mask_frozen
+                total_loss += (1 - self.masks[component] * self.attn_mask_unfrozen[component]).mean()
+            else:
+                total_loss += (1 - self.masks[component]).mean()
         return total_loss
-
-    
-    def discretize_topk(self, k):
-        # Undiscretize
-        self.undiscretize()
-        # If k == 0, everything is false
-        if k != 0:
-            # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
-            threshold = all_values.kthvalue(k).values
-            # Mask out everything less than threshold
-            for key, tensor in self.masks.items():
-                self.mask_masks[key] = tensor <= threshold
-        # Set binarized to true
-        self.binarized = True
     
     def discretize_topk_percent(self, percentile):
         # Undiscretize
@@ -284,7 +270,20 @@ class NeuronLevelMask(BasicMask):
         # If k == 0, everything is false
         if k != 0:
             # Flatten all tensors and concatenate them into one big tensor to find the top 1% value
-            all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
+            # all_values = torch.cat([tensor.data.flatten() for tensor in self.masks.values()])
+            all_values = []
+            for component in self.masks:
+                if "attn" in component:
+                    assert component in self.attn_mask_unfrozen and component in self.attn_mask_frozen
+
+                    # add components of the mask val that are trainable
+                    trainable_head_indices = self.attn_mask_unfrozen[component].data.flatten().nonzero().flatten()
+                    print(f"For {component=}, {trainable_head_indices=}")
+                    all_values.append(self.masks[component][trainable_head_indices].data.flatten())
+                else:
+                    all_values.append(self.masks[component].data.flatten())
+                # all_values.append(self.masks[component].data.flatten())
+
             k = int(percentile  * all_values.numel())
             threshold = all_values.kthvalue(k).values
             # Mask out everything less than threshold
@@ -293,11 +292,6 @@ class NeuronLevelMask(BasicMask):
         # Set binarized to true
         self.binarized = True
 
-    def on_step_end(self):
-        # Clip the masks at every step end
-        with torch.no_grad():
-            for layer in self.masks:
-                self.masks[layer].clamp_(0, 1)
 
 class FeatureLevelMask(MaskRoot):
     # Use an SAE as a mask
