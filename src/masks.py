@@ -135,6 +135,13 @@ class MLPOutputSVDMask(BasicMask):
             return unprojected_acts
         return hook_fn
 
+def convert_param_name(component, inverse=False):
+    """To solve KeyError: 'parameter name can\'t contain "."' Replace . with &"""
+    if inverse:
+        return component.replace("&", ".")
+    else:
+        return component.replace(".", "&")
+
 
 class NeuronLevelMask(BasicMask):
 
