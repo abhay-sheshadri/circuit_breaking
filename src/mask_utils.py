@@ -57,6 +57,14 @@ class BasicMask(MaskRoot):
             self.mask_masks[key].fill_(False)
         # Set binarized to false
         self.binarized = False
+    
+    def merge_discretizations(self,):
+        assert self.binarized, "Can't merge discretizations if not binarized"
+        self.binarized = False
+        for key in self.mask_masks:     
+            # mask_masks[key] is same shape as masks[key], set masks[key] to 0 where mask_masks[key] is true and 1 where mask_masks[key] is false
+            self.masks[key].data = (~self.mask_masks[key]).float()
+        
 
     def discretize_threshold(self, threshold):
         # Undiscretize
